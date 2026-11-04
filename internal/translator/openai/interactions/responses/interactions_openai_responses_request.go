@@ -5,6 +5,7 @@ import (
 
 	"github.com/MoeForge/moego/ojson"
 	applypatch "github.com/router-for-me/CLIProxyAPI/v8/internal/client/codex/apply-patch"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/signature"
 	translatorcommon "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/common"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 )
@@ -550,13 +551,14 @@ func responsesFunctionOutputToInteractions(item ojson.Result, functionNamesByCal
 	return outDoc.Bytes()
 }
 
-// responsesReasoningToInteractions carries a Devin-sealed reasoning item back
+// responsesReasoningToInteractions carries a Devin-signed reasoning item back
 // upstream as a thought step so the model keeps its own earlier thinking across
-// tool-call turns. Reasoning items without a Devin signature are left out, as
+// tool-call turns. Both sealed.v1 (Devin SWE) and wrapped Devin GPT signatures
+// are accepted; reasoning items without a Devin signature are left out, as
 // before, because other providers cannot read them.
 func responsesReasoningToInteractions(item ojson.Result) []byte {
 	sig := strings.TrimSpace(item.Get("encrypted_content").String())
-	if !strings.HasPrefix(sig, "sealed.v1.") {
+	if !strings.HasPrefix(sig, "sealed.v1.") && !signature.IsDevinOpenAIReasoningEnvelope(sig) {
 		return nil
 	}
 	var texts []string

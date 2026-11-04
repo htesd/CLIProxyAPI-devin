@@ -832,6 +832,17 @@ func interactionsReasoningEncryptedContent(rawSignature string) string {
 	if signature.IsRecognizedReasoningSignature(candidate) {
 		return candidate
 	}
+	// Devin GPT signatures arrive as a JSON array of native OpenAI reasoning
+	// items; wrap them so the client can echo them back on the next turn.
+	if signature.IsDevinOpenAIReasoningEnvelope(candidate) {
+		if _, ok := signature.UnwrapDevinOpenAIReasoning(candidate); ok {
+			return candidate
+		}
+		return ""
+	}
+	if wrapped, ok := signature.WrapDevinOpenAIReasoning(candidate); ok {
+		return wrapped
+	}
 	return ""
 }
 

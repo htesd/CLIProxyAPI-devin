@@ -2505,6 +2505,9 @@ func parseSignatureBytes(sigStr string) ([]byte, string) {
 	if strings.HasPrefix(s, "sealed.v1.") {
 		return []byte(s), "sealed"
 	}
+	if raw, ok := internalsignature.UnwrapDevinOpenAIReasoning(s); ok {
+		return raw, "openai"
+	}
 	if strings.HasPrefix(s, "claude#") {
 		return []byte(strings.TrimPrefix(s, "claude#")), "anthropic"
 	}
