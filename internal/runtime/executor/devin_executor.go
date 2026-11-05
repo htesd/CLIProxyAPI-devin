@@ -480,7 +480,16 @@ func (e *DevinExecutor) prepareDevinHTTPRequest(ctx context.Context, auth *clipr
 		return nil, "", nil, errPayload
 	}
 
-	framed := helps.WrapConnectEnvelope(protoBytes)
+	framed, compressed, errFrame := helps.BuildDevinRequestFrame(protoBytes)
+	if errFrame != nil {
+		return nil, "", nil, errFrame
+	}
+	if len(framed) > helps.DevinRequestBodyLimit {
+		return nil, "", nil, devinRequestTooLargeError(len(protoBytes), len(framed))
+	}
+	if compressed {
+		helps.LogWithRequestID(ctx).Infof("devin request compressed: %.1f MiB -> %.1f MiB", mebibytes(len(protoBytes)), mebibytes(len(framed)))
+	}
 	url := strings.TrimRight(baseURL, "/") + helps.DevinChatPath
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(framed))
@@ -490,6 +499,10 @@ func (e *DevinExecutor) prepareDevinHTTPRequest(ctx context.Context, auth *clipr
 
 	if err := e.PrepareRequest(httpReq, auth); err != nil {
 		return nil, "", nil, err
+	}
+	if compressed {
+		httpReq.Header.Set(helps.DevinConnectContentEncodingHeader, "gzip")
+		httpReq.Header.Set(helps.DevinConnectAcceptEncodingHeader, "gzip")
 	}
 
 	return httpReq, chatModelUID, logBody, nil
@@ -2922,4 +2935,21 @@ func logDevinBilling(ctx context.Context, auth *cliproxyauth.Auth, chatModelUID 
 		"devin billing: auth=%s model=%s source=%s api_provider=%s provider_plan=%t",
 		authName, chatModelUID, helps.DevinBillingSource(usage), helps.DevinAPIProviderName(usage.APIProvider), usage.UsedProviderPlan,
 	)
+}
+
+// devinRequestTooLargeError reports a request that is still above Devin's body
+// limit after compression. Returning it locally replaces the upstream nginx
+// HTML 413 with an actionable message and avoids a pointless upstream call.
+func devinRequestTooLargeError(rawBytes, frameBytes int) error {
+	return statusErr{
+		code: http.StatusRequestEntityTooLarge,
+		msg: fmt.Sprintf(
+			"request too large for Devin: %.1f MiB (%.1f MiB after compression), upstream limit is %.0f MiB; compact or shorten the conversation and retry",
+			mebibytes(rawBytes), mebibytes(frameBytes), mebibytes(helps.DevinRequestBodyLimit),
+		),
+	}
+}
+
+func mebibytes(n int) float64 {
+	return float64(n) / (1 << 20)
 }
