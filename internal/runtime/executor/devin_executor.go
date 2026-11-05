@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -306,6 +307,9 @@ func (e *DevinExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
 		return resp, errConsume
 	}
 
+	if respLog != nil {
+		logDevinBilling(ctx, auth, chatModelUID, respLog.Usage)
+	}
 	if respLog != nil && respLog.Usage != nil && respLog.Usage.ModelName != "" {
 		reporter.SetResponseModel(respLog.Usage.ModelName)
 	}
@@ -1010,6 +1014,7 @@ func (e *DevinExecutor) streamDevinFramesForAuth(
 				if frameRes.Usage.CacheWriteTokens > 0 {
 					finalUsage.CacheWriteTokens = frameRes.Usage.CacheWriteTokens
 				}
+				helps.MergeDevinBilling(finalUsage, frameRes.Usage)
 				if frameRes.Usage.RequestID != "" {
 					finalUsage.RequestID = frameRes.Usage.RequestID
 				}
@@ -1211,6 +1216,7 @@ func (e *DevinExecutor) streamDevinFramesForAuth(
 	if completionFinishReason != "" {
 		_ = completedDoc.Set("interaction.finish_reason", completionFinishReason)
 	}
+	logDevinBilling(ctx, auth, chatModelUID, finalUsage)
 	if finalUsage != nil {
 		totalInput := finalUsage.PromptTokens + finalUsage.CachedTokens
 		totalOutput := finalUsage.CompletionTokens
@@ -1422,6 +1428,7 @@ func consumeDevinFramesToInteractionsForAuth(body io.Reader, model, chatModelUID
 				if frameRes.Usage.CacheWriteTokens > 0 {
 					finalUsage.CacheWriteTokens = frameRes.Usage.CacheWriteTokens
 				}
+				helps.MergeDevinBilling(finalUsage, frameRes.Usage)
 				if frameRes.Usage.RequestID != "" {
 					finalUsage.RequestID = frameRes.Usage.RequestID
 				}
@@ -2896,3 +2903,23 @@ func setDevinStringWithoutHTMLEscapeDoc(doc *ojson.Doc, path, value string) erro
 
 // SupportsApplyPatch reports the actual executor contract, independent of its provider name.
 func (e *DevinExecutor) SupportsApplyPatch() bool { return e != nil }
+
+// logDevinBilling records which source paid for a completed Devin turn, so that
+// silent fallbacks from a linked provider plan (ChatGPT) to Devin quota or
+// on-demand credits are visible per request.
+func logDevinBilling(ctx context.Context, auth *cliproxyauth.Auth, chatModelUID string, usage *helps.DevinUsage) {
+	if usage == nil {
+		return
+	}
+	authName := ""
+	if auth != nil {
+		authName = filepath.Base(strings.TrimSpace(auth.FileName))
+		if authName == "" || authName == "." {
+			authName = auth.ID
+		}
+	}
+	helps.LogWithRequestID(ctx).Infof(
+		"devin billing: auth=%s model=%s source=%s api_provider=%s provider_plan=%t",
+		authName, chatModelUID, helps.DevinBillingSource(usage), helps.DevinAPIProviderName(usage.APIProvider), usage.UsedProviderPlan,
+	)
+}

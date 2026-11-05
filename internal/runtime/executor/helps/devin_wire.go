@@ -104,7 +104,8 @@ type DevinUsage struct {
 	CompletionTokens int64             `json:"completion_tokens"`
 	CachedTokens     int64             `json:"cached_tokens"`
 	CacheWriteTokens int64             `json:"cache_write_tokens,omitempty"`
-	StatusCode       uint64            `json:"status_code,omitempty"`
+	APIProvider      uint64            `json:"api_provider,omitempty"`       // ModelUsageStats field 6
+	UsedProviderPlan bool              `json:"used_provider_plan,omitempty"` // ModelUsageStats field 13: a linked plan (e.g. ChatGPT) paid
 	RequestID        string            `json:"request_id,omitempty"`
 	ModelName        string            `json:"model_name,omitempty"`
 	Headers          map[string]string `json:"headers,omitempty"`
@@ -796,8 +797,10 @@ func parseDevinUsageField(data []byte) *DevinUsage {
 				u.CacheWriteTokens += int64(v)
 			case 5: // Cache read tokens
 				u.CachedTokens = int64(v)
-			case 6: // Status code
-				u.StatusCode = v
+			case 6: // API provider that served and billed the turn
+				u.APIProvider = v
+			case 13: // used_provider_plan: the linked provider plan paid for the turn
+				u.UsedProviderPlan = v != 0
 			}
 		case protowire.BytesType:
 			val, bn := protowire.ConsumeBytes(data[pos:])

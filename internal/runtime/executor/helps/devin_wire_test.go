@@ -691,8 +691,8 @@ func TestParseDevinUsageField_HeadersAndField4(t *testing.T) {
 	if usage.CachedTokens != 19179 {
 		t.Errorf("CachedTokens = %d, want 19179", usage.CachedTokens)
 	}
-	if usage.StatusCode != 66 {
-		t.Errorf("StatusCode = %d, want 66", usage.StatusCode)
+	if usage.APIProvider != 66 {
+		t.Errorf("APIProvider = %d, want 66", usage.APIProvider)
 	}
 	if usage.RequestID != "req_5bb00ad48ae048119e3420bddf36257f" {
 		t.Errorf("RequestID = %q, want clean request-id", usage.RequestID)
