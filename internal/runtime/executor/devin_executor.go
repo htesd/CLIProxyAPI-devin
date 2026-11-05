@@ -2938,16 +2938,20 @@ func logDevinBilling(ctx context.Context, auth *cliproxyauth.Auth, chatModelUID 
 }
 
 // devinRequestTooLargeError reports a request that is still above Devin's body
-// limit after compression. Returning it locally replaces the upstream nginx
-// HTML 413 with an actionable message and avoids a pointless upstream call.
+// limit after compression. It is returned locally, without an upstream call,
+// as an OpenAI-style 400 context_length_exceeded error: clients such as Codex
+// treat that code as "context window full" and compact the conversation
+// automatically, and it does not penalize the credential.
 func devinRequestTooLargeError(rawBytes, frameBytes int) error {
-	return statusErr{
-		code: http.StatusRequestEntityTooLarge,
-		msg: fmt.Sprintf(
-			"request too large for Devin: %.1f MiB (%.1f MiB after compression), upstream limit is %.0f MiB; compact or shorten the conversation and retry",
-			mebibytes(rawBytes), mebibytes(frameBytes), mebibytes(helps.DevinRequestBodyLimit),
-		),
+	message := fmt.Sprintf(
+		"request too large for Devin: %.1f MiB (%.1f MiB after compression), upstream limit is %.0f MiB; compact or shorten the conversation and retry",
+		mebibytes(rawBytes), mebibytes(frameBytes), mebibytes(helps.DevinRequestBodyLimit),
+	)
+	body, errSet := ojson.SetBytes([]byte(`{"error":{"message":"","type":"invalid_request_error","code":"context_length_exceeded","param":"input"}}`), "error.message", message)
+	if errSet != nil {
+		body = []byte(message)
 	}
+	return statusErr{code: http.StatusBadRequest, msg: string(body)}
 }
 
 func mebibytes(n int) float64 {

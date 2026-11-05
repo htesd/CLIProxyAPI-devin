@@ -97,10 +97,23 @@ func TestDevinExecutorRejectsRequestsAboveUpstreamLimitLocally(t *testing.T) {
 		t.Fatalf("upstream called %d times for an oversized request", captured.calls)
 	}
 	var se statusErr
-	if !errors.As(err, &se) || se.code != http.StatusRequestEntityTooLarge {
-		t.Fatalf("err = %v, want local 413 statusErr", err)
+	if !errors.As(err, &se) || se.code != http.StatusBadRequest {
+		t.Fatalf("err = %v, want local 400 statusErr", err)
 	}
-	if !strings.Contains(se.msg, "request too large for Devin") {
-		t.Fatalf("message = %q", se.msg)
+	var body struct {
+		Error struct {
+			Message string `json:"message"`
+			Type    string `json:"type"`
+			Code    string `json:"code"`
+		} `json:"error"`
+	}
+	if errJSON := json.Unmarshal([]byte(se.msg), &body); errJSON != nil {
+		t.Fatalf("error body is not JSON: %v (%q)", errJSON, se.msg)
+	}
+	if body.Error.Code != "context_length_exceeded" || body.Error.Type != "invalid_request_error" {
+		t.Fatalf("error = %+v, want invalid_request_error/context_length_exceeded", body.Error)
+	}
+	if !strings.Contains(body.Error.Message, "request too large for Devin") {
+		t.Fatalf("message = %q", body.Error.Message)
 	}
 }
